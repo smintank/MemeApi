@@ -1,0 +1,39 @@
+version: "3.8"
+
+volumes:
+  pg_data:
+  minio_data:
+
+services:
+  db:
+    image: postgres:13.10
+    env_file: .env
+    volumes:
+      - pg_data:/var/lib/postgresql/data/
+
+  minio:
+    image: quay.io/minio/minio
+    env_file: .env
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
+  media_private_api:
+    build: ./media_private_api
+    env_file: .env
+    ports:
+      - "8001:8001"
+    depends_on:
+      - minio
+
+  meme_public_api:
+    build: ./meme_public_api
+    env_file: .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - media_private_api
