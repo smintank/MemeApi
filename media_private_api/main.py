@@ -3,9 +3,9 @@ import os
 from fastapi import FastAPI, UploadFile, File
 from minio import S3Error, Minio
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 MINIO_URL = os.getenv("MINIO_URL")
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER")
@@ -14,7 +14,7 @@ MINIO_BUCKET_NAME = os.getenv("MINIO_BUCKET_NAME")
 
 
 minio_client = Minio(
-    MINIO_URL,
+    endpoint=MINIO_URL,
     access_key=MINIO_ROOT_USER,
     secret_key=MINIO_ROOT_PASSWORD,
     secure=False
