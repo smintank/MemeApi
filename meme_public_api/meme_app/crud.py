@@ -1,61 +1,59 @@
-import uuid
+from typing import Sequence
 
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException
+from sqlalchemy import Row
 from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from .utils import store_image_data, get_image_data, delete_image_data
-from .schemas import SMeme, SCreateMeme
+from sqlalchemy.exc import SQLAlchemyError
 
 
-async def get_item(db: AsyncSession, model, item_id: int):
-    result = await db.execute(select(model).filter(model.id == item_id))
-    meme = result.scalar()
-    if not meme:
-        raise HTTPException(status_code=404, detail="Meme Not Found")
-    image = await get_image_data(meme.image_id)
-    return SMeme(id=item_id, text=meme.text, image=image)
+async def get_item(db: AsyncSession, model, item_id: int) -> Row:
+    item = (await db.scalars(select(model).where(model.id == item_id))).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item Not Found")
+    return item
 
 
-async def get_items(db: AsyncSession, model, skip: int = 0, limit: int = 10) -> list[SMeme]:
-    result = await db.execute(select(model).offset(skip).limit(limit))
-    memes = result.scalars().all()
-    memes_list = []
-    for meme in memes:
-        image = await get_image_data(meme.image_id)
-        memes_list.append(SMeme(id=meme.id, text=meme.text, image=image))
-    return memes_list
+async def get_items(db: AsyncSession, model, skip: int = 0, limit: int = 10) -> Sequence[Row]:
+    try:
+        return (await db.scalars(select(model).offset(skip).limit(limit))).all()
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-async def create_item(db: AsyncSession, model, text: str, image: UploadFile):
-    stored_image = await store_image_data(image, str(uuid.uuid4()))
-    image_id = stored_image['_object_name']
-    db_meme = model(text=text, image_id=image_id)
-    db.add(db_meme)
-    await db.commit()
-    await db.refresh(db_meme)
-    return db_meme
+async def create_item(db: AsyncSession, model, **kwargs) -> Row:
+    try:
+        db_meme = model(**kwargs)
+        db.add(db_meme)
+        await db.commit()
+        await db.refresh(db_meme)
+        return db_meme
+    except SQLAlchemyError as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-async def update_item(db: AsyncSession, model, item_id: int, text: str, image: UploadFile):
-    result = await db.execute(select(model).filter(model.id == item_id))
-    updated_meme = result.scalar()
-    if updated_meme is None:
-        raise HTTPException(status_code=404, detail="Meme not found")
-    stored_image = await store_image_data(image, str(uuid.uuid4()))
-    updated_meme.image_id = stored_image['_object_name']
-    updated_meme.text = text
-    await db.commit()
-    await db.refresh(updated_meme)
-    return SCreateMeme(id=item_id, text=updated_meme.text, image_id=updated_meme.image_id)
+async def update_item(db: AsyncSession, model, item_id: int, **kwargs) -> Row:
+    try:
+        item = await get_item(db, model, item_id)
+        [setattr(item, key, value) for key, value in kwargs.items()]
+        await db.commit()
+        await db.refresh(item)
+        return item
+    except HTTPException:
+        raise HTTPException(status_code=404, detail="Item not found")
+    except SQLAlchemyError as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-async def delete_item(db: AsyncSession, model, item_id: int, delete_image: bool = True):
-    result = await db.execute(select(model).filter(model.id == item_id))
-    deleted_meme = result.scalar()
-    if deleted_meme is None:
-        raise HTTPException(status_code=404, detail="Meme not found")
-    if delete_image:
-        await delete_image_data(deleted_meme.image_id)
-    await db.delete(deleted_meme)
-    await db.commit()
+async def delete_item(db: AsyncSession, model, item_id: int) -> None:
+    try:
+        item = await get_item(db, model, item_id)
+        await db.delete(item)
+        await db.commit()
+    except HTTPException:
+        raise HTTPException(status_code=404, detail="Item not found")
+    except SQLAlchemyError as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
