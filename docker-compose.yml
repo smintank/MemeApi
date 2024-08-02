@@ -1,5 +1,3 @@
-version: "3.8"
-
 volumes:
   pg_data:
   minio_data:
@@ -7,28 +5,38 @@ volumes:
 services:
   db:
     image: postgres:13.10
+    container_name: ${POSTGRES_HOST}
     env_file: .env
     volumes:
       - pg_data:/var/lib/postgresql/data/
+    restart: always
 
   minio:
     image: minio/minio
+    container_name: ${MINIO_HOST}
     env_file: .env
     command: server /data
+    ports:
+      - "${MINIO_PORT}:9000"
     volumes:
       - minio_data:/data
+    restart: always
 
   media_private_api:
     build: ./media_private_api
+    container_name: ${MEDIA_API_HOST}
     env_file: .env
     depends_on:
       - minio
+    restart: always
 
   meme_public_api:
     build: ./meme_public_api
+    container_name: ${MEME_API_HOST}
     env_file: .env
     ports:
-      - "8000:8000"
+      - "${MEME_API_PORT}:8000"
     depends_on:
       - db
       - media_private_api
+    restart: always
