@@ -30,7 +30,6 @@ async def upload_file(file: UploadFile = File(...)) -> JSONResponse:
             status_code=201
         )
     except S3Error:
-        logger.error(f"Error to upload file {file.filename}")
         raise HTTPException(status_code=404, detail="File not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
